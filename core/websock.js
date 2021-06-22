@@ -256,19 +256,19 @@ export default class Websock {
 
             this._eventHandlers.open();
             Log.Debug("<< WebSock.onopen");
-        };
+        });
 
         this._websocket.on("disconnect", (e) => {
             Log.Debug(">> WebSock.onclose");
             this._eventHandlers.close(e);
             Log.Debug("<< WebSock.onclose");
-        };
+        });
 
         this._websocket.on("error", (e) => {
             Log.Debug(">> WebSock.onerror: " + e);
             this._eventHandlers.error(e);
             Log.Debug("<< WebSock.onerror: " + e);
-        };
+        });
     }
 
     close() {
