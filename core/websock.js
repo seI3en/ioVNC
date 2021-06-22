@@ -1,4 +1,5 @@
 /*
+ * socket.IO wrapper based on
  * Websock: high-performance buffering wrapper
  * Copyright (C) 2019 The noVNC Authors
  * Licensed under MPL 2.0 (see LICENSE.txt)
@@ -49,7 +50,7 @@ const rawChannelProps = [
 
 export default class Websock {
     constructor() {
-        this._websocket = null;  // WebSocket or RTCDataChannel object
+        this._websocket = null;  // socket.IO or RTCDataChannel object
 
         this._rQi = 0;           // Receive queue index
         this._rQlen = 0;         // Next write position in the receive queue
@@ -191,8 +192,8 @@ export default class Websock {
     // Send Queue
 
     flush() {
-        if (this._sQlen > 0 && this.readyState === 'open') {
-            this._websocket.send(this._encodeMessage());
+        if (this._sQlen > 0 && this._websocket.io._readyState === 'open') {
+            this._websocket.emit('message',this._encodeMessage());
             this._sQlen = 0;
         }
     }
@@ -228,7 +229,7 @@ export default class Websock {
     }
 
     open(uri, protocols) {
-        this.attach(new WebSocket(uri, protocols));
+        this.attach(io());
     }
 
     attach(rawChannel) {
@@ -245,9 +246,9 @@ export default class Websock {
 
         this._websocket = rawChannel;
         this._websocket.binaryType = "arraybuffer";
-        this._websocket.onmessage = this._recvMessage.bind(this);
+        this._websocket.on('message', this._recvMessage.bind(this));
 
-        this._websocket.onopen = () => {
+        this._websocket.on("connect", () => {
             Log.Debug('>> WebSock.onopen');
             if (this._websocket.protocol) {
                 Log.Info("Server choose sub-protocol: " + this._websocket.protocol);
@@ -257,13 +258,13 @@ export default class Websock {
             Log.Debug("<< WebSock.onopen");
         };
 
-        this._websocket.onclose = (e) => {
+        this._websocket.on("disconnect", (e) => {
             Log.Debug(">> WebSock.onclose");
             this._eventHandlers.close(e);
             Log.Debug("<< WebSock.onclose");
         };
 
-        this._websocket.onerror = (e) => {
+        this._websocket.on("error", (e) => {
             Log.Debug(">> WebSock.onerror: " + e);
             this._eventHandlers.error(e);
             Log.Debug("<< WebSock.onerror: " + e);
@@ -272,13 +273,13 @@ export default class Websock {
 
     close() {
         if (this._websocket) {
-            if (this.readyState === 'connecting' ||
-                this.readyState === 'open') {
-                Log.Info("Closing WebSocket connection");
+            if (this._websocket.io._readyState === 'connecting' ||
+                this._websocket.io._readyState === 'open') {
+                Log.Info("Closing socket.IO connection");
                 this._websocket.close();
             }
 
-            this._websocket.onmessage = () => {};
+            this._websocket.on('message', () => {});
         }
     }
 
@@ -286,7 +287,8 @@ export default class Websock {
     _encodeMessage() {
         // Put in a binary arraybuffer
         // according to the spec, you can send ArrayBufferViews with the send method
-        return new Uint8Array(this._sQ.buffer, 0, this._sQlen);
+        //return new Uint8Array(this._sQ.buffer, 0, this._sQlen); // this produces messages of 10240 bytes length each
+        return new Uint8Array(this._sQ.buffer.slice(0,this._sQlen), 0, this._sQlen);
     }
 
     // We want to move all the unread data to the start of the queue,
@@ -337,7 +339,7 @@ export default class Websock {
     }
 
     _recvMessage(e) {
-        this._DecodeMessage(e.data);
+        this._DecodeMessage(e);
         if (this.rQlen > 0) {
             this._eventHandlers.message();
             if (this._rQlen == this._rQi) {
