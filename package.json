@@ -75,9 +75,9 @@
     "sinon-chai": "*"
   },
   "dependencies": {
-    "ws": ">=0.4.27",
+    "mime-types": "latest",
     "optimist": "latest",
-    "mime-types" : "latest"
+    "socket.io": "^3.1.2"
   },
   "keywords": [
     "vnc",

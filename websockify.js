@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+// A socket.IO to TCP socket proxy based on
 // A WebSocket to TCP socket proxy
 // Copyright 2012 Joel Martin
 // Licensed under LGPL version 3 (see docs/LICENSE.LGPL-3)
@@ -19,23 +20,22 @@ var argv = require('optimist').argv,
     mime = require('mime-types'),
 
     Buffer = require('buffer').Buffer,
-    WebSocketServer = require('ws').Server,
 
     webServer, wsServer,
     source_host, source_port, target_host, target_port,
     web_path = null;
 
 
-// Handle new WebSocket client
+// Handle new socket.IO client
 new_client = function(client, req) {
-    var clientAddr = client._socket.remoteAddress, log;
+    var clientAddr = client.client.conn.remoteAddress, log;
     var start_time = new Date().getTime();
 
-    console.log(req ? req.url : client.upgradeReq.url);
+    console.log(client.handshake.url);
     log = function (msg) {
         console.log(' ' + clientAddr + ': '+ msg);
     };
-    log('WebSocket connection');
+    log('socket.IO connection');
     log('Version ' + client.protocolVersion + ', subprotocol: ' + client.protocol);
 
     if (argv.record) {
@@ -58,7 +58,7 @@ new_client = function(client, req) {
         }
 
         try {
-            client.send(data);
+            client.emit('message', data);
         } catch(e) {
             log("Client closed, cleaning up target");
             target.end();
@@ -92,11 +92,11 @@ new_client = function(client, req) {
         target.write(msg);
     });
     client.on('close', function(code, reason) {
-        log('WebSocket client disconnected: ' + code + ' [' + reason + ']');
+        log('socket.IO client disconnected: ' + code + ' [' + reason + ']');
         target.end();
     });
     client.on('error', function(a) {
-        log('WebSocket client error: ' + a);
+        log('socket.IO client error: ' + a);
         target.end();
     });
 };
@@ -202,7 +202,7 @@ try {
     process.exit(2);
 }
 
-console.log("WebSocket settings: ");
+console.log("socket.IO settings: ");
 console.log("    - proxying from " + source_host + ":" + source_port +
             " to " + target_host + ":" + target_port);
 if (argv.web) {
@@ -213,13 +213,13 @@ if (argv.cert) {
     argv.key = argv.key || argv.cert;
     var cert = fs.readFileSync(argv.cert),
         key = fs.readFileSync(argv.key);
-    console.log("    - Running in encrypted HTTPS (wss://) mode using: " + argv.cert + ", " + argv.key);
+    console.log("    - Running in encrypted HTTPS mode using: " + argv.cert + ", " + argv.key);
     webServer = https.createServer({cert: cert, key: key}, http_request);
 } else {
-    console.log("    - Running in unencrypted HTTP (ws://) mode");
+    console.log("    - Running in unencrypted HTTP mode");
     webServer = http.createServer(http_request);
 }
 webServer.listen(source_port, function() {
-    wsServer = new WebSocketServer({server: webServer});
+    wsServer = require('socket.io')(webServer);
     wsServer.on('connection', new_client);
 });
