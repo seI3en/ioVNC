@@ -419,13 +419,13 @@ export default class RFB extends EventTargetMixin {
 
             Log.Info("Sending key (" + (down ? "down" : "up") + "): keysym " + keysym + ", scancode " + scancode);
 
-            RFB.messages.QEMUExtendedKeyEvent(this._sock, keysym, down, scancode);
+            this._sock._websocket.emit('message',{"event": "extkey", "keysym": keysym, "down": down, "scancode": scancode});
         } else {
             if (!keysym) {
                 return;
             }
             Log.Info("Sending keysym (" + (down ? "down" : "up") + "): " + keysym);
-            RFB.messages.keyEvent(this._sock, keysym, down ? 1 : 0);
+            this._sock._websocket.emit('message',{"event": "key", "keysym": keysym, "down": down ? 1 : 0});
         }
     }
 
