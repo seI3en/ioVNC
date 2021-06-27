@@ -20,6 +20,7 @@ var argv = require('optimist').argv,
     mime = require('mime-types'),
 
     Buffer = require('buffer').Buffer,
+    RFB = require('./core/rfbclient').RFB,
 
     webServer, wsServer,
     source_host, source_port, target_host, target_port,
@@ -30,6 +31,7 @@ var argv = require('optimist').argv,
 new_client = function(client, req) {
     var clientAddr = client.client.conn.remoteAddress, log;
     var start_time = new Date().getTime();
+    var rfb;
 
     console.log(client.handshake.url);
     log = function (msg) {
@@ -47,6 +49,7 @@ new_client = function(client, req) {
 
     var target = net.createConnection(target_port,target_host, function() {
         log('connected to target');
+        rfb = new RFB(target);
     });
     target.on('data', function(data) {
         //log("sending message: " + data);
@@ -89,7 +92,7 @@ new_client = function(client, req) {
           rs.write(rsdata);
         }
 
-        target.write(msg);
+        rfb._handleMessage(msg);
     });
     client.on('close', function(code, reason) {
         log('socket.IO client disconnected: ' + code + ' [' + reason + ']');

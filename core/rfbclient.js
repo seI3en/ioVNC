@@ -14,6 +14,7 @@ class RFB {
         } else {
             this.target.write(msg);
         }
+    }
 
 // formerly Class Methods, now instance methods
     keyEvent(keysym, down) {
