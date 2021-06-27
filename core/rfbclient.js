@@ -1,13 +1,22 @@
 class RFB {
 
-    constructor() {
+    constructor(target) {
+        this.target = target;
         const _sQbufferSize = 256;
         this._sQ = new Uint8Array(_sQbufferSize);
     }
 
+    _handleMessage(msg) {
+        if (msg["event"] == "key") {
+            this.keyEvent(msg["keysym"], msg["down"]);
+        } else if (msg["event"] == "extkey") {
+            this.QEMUExtendedKeyEvent(msg["keysym"], msg["down"], msg["scancode"]);
+        } else {
+            this.target.write(msg);
+        }
 
 // formerly Class Methods, now instance methods
-    keyEvent(target, keysym, down) {
+    keyEvent(keysym, down) {
         const buff = this._sQ.slice(0,8);
         const offset = 0;
 
@@ -22,10 +31,10 @@ class RFB {
         buff[offset + 6] = (keysym >> 8);
         buff[offset + 7] = keysym;
 
-        target.write(buff);
+        this.target.write(buff);
     }
 
-    QEMUExtendedKeyEvent(target, keysym, down, keycode) {
+    QEMUExtendedKeyEvent(keysym, down, keycode) {
         function getRFBkeycode(xtScanCode) {
             const upperByte = (keycode >> 8);
             const lowerByte = (keycode & 0x00ff);
@@ -56,10 +65,10 @@ class RFB {
         buff[offset + 10] = (RFBkeycode >> 8);
         buff[offset + 11] = RFBkeycode;
 
-        target.write(buff);
+        this.target.write(buff);
     }
 
-    pointerEvent(target, x, y, mask) {
+    pointerEvent(x, y, mask) {
         const buff = this._sQ.slice(0,6);
         const offset = 0;
 
@@ -73,7 +82,7 @@ class RFB {
         buff[offset + 4] = y >> 8;
         buff[offset + 5] = y;
 
-        target.write(buff);
+        this.target.write(buff);
     }
 
     // Used to build Notify and Request data.
@@ -98,7 +107,7 @@ class RFB {
         return data;
     }
 
-    extendedClipboardProvide(target, formats, inData) {
+    extendedClipboardProvide(formats, inData) {
         // Deflate incomming data and their sizes
         let deflator = new Deflator();
         let dataToDeflate = [];
@@ -133,22 +142,22 @@ class RFB {
                                                            formats));
         data.set(deflatedData, 4);
 
-        this.clientCutText(target, data, true);
+        this.clientCutText(data, true);
     }
 
-    extendedClipboardNotify(target, formats) {
+    extendedClipboardNotify(formats) {
         let flags = this._buildExtendedClipboardFlags([extendedClipboardActionNotify],
                                                               formats);
-        this.clientCutText(target, flags, true);
+        this.clientCutText(flags, true);
     }
 
-    extendedClipboardRequest(target, formats) {
+    extendedClipboardRequest(formats) {
         let flags = this._buildExtendedClipboardFlags([extendedClipboardActionRequest],
                                                               formats);
-        this.clientCutText(target, flags, true);
+        this.clientCutText(flags, true);
     }
 
-    extendedClipboardCaps(target, actions, formats) {
+    extendedClipboardCaps(actions, formats) {
         let formatKeys = Object.keys(formats);
         let data  = new Uint8Array(4 + (4 * formatKeys.length));
 
@@ -168,10 +177,10 @@ class RFB {
             data[3] |= (1 << formatKeys[i]); // Update our format flags
         }
 
-        this.clientCutText(target, data, true);
+        this.clientCutText(data, true);
     }
 
-    clientCutText(target, data, extended = false) {
+    clientCutText(data, extended = false) {
         const buff = this._sQ;
         var offset = 0;
 
@@ -207,7 +216,7 @@ class RFB {
                 buff[offset + i] = data[dataOffset + i];
             }
 
-            target.write(buff.slice(0,flushSize + offset));
+            this.target.write(buff.slice(0,flushSize + offset));
 
             remaining -= flushSize;
             dataOffset += flushSize;
@@ -216,7 +225,7 @@ class RFB {
 
     }
 
-    setDesktopSize(target, width, height, id, flags) {
+    setDesktopSize(width, height, id, flags) {
         const buff = this._sQ.slice(0,24);
         const offset = 0;
 
@@ -248,10 +257,10 @@ class RFB {
         buff[offset + 22] = flags >> 8;
         buff[offset + 23] = flags;
 
-        target.write(buff);
+        this.target.write(buff);
     }
 
-    clientFence(target, flags, payload) {
+    clientFence(flags, payload) {
         const buff = this._sQ;
         const offset = 0;
 
@@ -274,10 +283,10 @@ class RFB {
             buff[offset + 9 + i] = payload.charCodeAt(i);
         }
 
-        target.write(buff.slice(0,9 + n));
+        this.target.write(buff.slice(0,9 + n));
     }
 
-    enableContinuousUpdates(target, enable, x, y, width, height) {
+    enableContinuousUpdates(enable, x, y, width, height) {
         const buff = this._sQ.slice(0,10);
         const offset = 0;
 
@@ -293,10 +302,10 @@ class RFB {
         buff[offset + 8] = height >> 8; // height
         buff[offset + 9] = height;
 
-        target.write(buff);
+        this.target.write(buff);
     }
 
-    pixelFormat(target, depth, trueColor) {
+    pixelFormat(depth, trueColor) {
         const buff = this._sQ.slice(0,20);
         const offset = 0;
 
@@ -340,10 +349,10 @@ class RFB {
         buff[offset + 18] = 0;   // padding
         buff[offset + 19] = 0;   // padding
 
-        target.write(buff);
+        this.target.write(buff);
     }
 
-    clientEncodings(target, encodings) {
+    clientEncodings(encodings) {
         const buff = this._sQ;
         const offset = 0;
 
@@ -364,10 +373,10 @@ class RFB {
             j += 4;
         }
 
-        target.write(buff.slice(0,j - offset));
+        this.target.write(buff.slice(0,j - offset));
     }
 
-    fbUpdateRequest(target, incremental, x, y, w, h) {
+    fbUpdateRequest(incremental, x, y, w, h) {
         const buff = this._sQ.slice(0,10);
         const offset = 0;
 
@@ -389,10 +398,10 @@ class RFB {
         buff[offset + 8] = (h >> 8) & 0xFF;
         buff[offset + 9] = h & 0xFF;
 
-        target.write(buff);
+        this.target.write(buff);
     }
 
-    xvpOp(target, ver, op) {
+    xvpOp(ver, op) {
         const buff = this._sQ.slice(0,4);
         const offset = 0;
 
@@ -402,7 +411,7 @@ class RFB {
         buff[offset + 2] = ver;
         buff[offset + 3] = op;
 
-        target.write(buff);
+        this.target.write(buff);
     }
 
 } // end of 'RFB' class
