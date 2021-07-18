@@ -384,7 +384,7 @@ export default class Display {
             });
         } else {
             // NB(directxman12): arr must be an Type Array view
-            let data = new Uint8ClampedArray(arr.buffer,
+			let data = new Uint8ClampedArray(arr,
                                              arr.byteOffset + offset,
                                              width * height * 4);
             let img = new ImageData(data, width, height);
