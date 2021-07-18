@@ -373,7 +373,7 @@ export default class Display {
             // but it's a lot of extra work for not a lot of payoff -- if we're using the render queue,
             // this probably isn't getting called *nearly* as much
             const newArr = new Uint8Array(width * height * 4);
-            newArr.set(new Uint8Array(arr.buffer, 0, newArr.length));
+            newArr.set(new Uint8Array(arr, 0, newArr.length));
             this._renderQPush({
                 'type': 'blit',
                 'data': newArr,
