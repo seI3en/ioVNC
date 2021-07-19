@@ -233,11 +233,63 @@ export default class RFB extends EventTargetMixin {
 
         this._gestures = new GestureHandler();
 
-        this._sock = new Websock();
-        this._sock.on('open', this._socketOpen.bind(this));
-        this._sock.on('close', this._socketClose.bind(this));
-        this._sock.on('message', this._handleMessage.bind(this));
-        this._sock.on('error', this._socketError.bind(this));
+        //this._sock = new Websock();
+		this._sock = io();
+        //this._sock.on('open', this._socketOpen.bind(this));
+        //this._sock.on('close', this._socketClose.bind(this));
+        //this._sock.on('message', this._handleMessage.bind(this));
+		
+		this._sock.on("_setDesktopName", (name) => {
+			this._setDesktopName(name);
+        });
+		this._sock.on("_resize", (width, height) => {
+			this._resize(width, height);
+        });
+		this._sock.on("_keyboard.grab", () => {
+			this._keyboard.grab();
+        });
+		this._sock.on("_updateConnectionState", (state) => {
+			this._updateConnectionState(state);
+        });
+		
+		this._sock.on("fbu_desktopsize", (width, height) => {
+			// can't call off server-side FBU processing anyway
+			/*if (this._display.pending()) {
+                this._flushing = true;
+                this._display.flush();
+                return false;
+            }*/
+			this._resize(width, height);
+			this._display.flip();
+        });
+		
+		this._sock.on("fbu_raw_blit", (x, curY, width, currHeight, data, index) => {
+			// can't call off server-side FBU processing anyway
+			/*if (this._display.pending()) {
+                this._flushing = true;
+                this._display.flush();
+                return false;
+            }*/
+		this._display.blitImage(x, curY, width, currHeight, data, index);
+		this._display.flip();
+        });
+		
+		this._sock.on("fbu_cursor_change", (rgbaPixels, hotx, hoty, w, h) => {
+			// can't call off server-side FBU processing anyway
+			/*if (this._display.pending()) {
+                this._flushing = true;
+                this._display.flush();
+                return false;
+            }*/
+        this._cursor.change(rgbaPixels,
+                            hotx, hoty,
+                            w, h
+        );
+		this._display.flip();
+        });
+		
+		
+        //this._sock.on('error', this._socketError.bind(this));
 
         // All prepared, kick off the connection
         this._updateConnectionState('connecting');
@@ -2497,7 +2549,7 @@ export default class RFB extends EventTargetMixin {
         this._updateClip();
         this._updateScale();
 
-        this._updateContinuousUpdates();
+        //this._updateContinuousUpdates();
     }
 
     _xvpOp(ver, op) {
