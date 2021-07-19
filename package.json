@@ -75,6 +75,7 @@
     "sinon-chai": "*"
   },
   "dependencies": {
+    "http-auth": "^4.1.7",
     "mime-types": "latest",
     "optimist": "latest",
     "socket.io": "^3.1.2"
