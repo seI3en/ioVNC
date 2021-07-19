@@ -21,6 +21,12 @@ var argv = require('optimist').argv,
 
     Buffer = require('buffer').Buffer,
     RFB = require('./core/rfbclient').RFB,
+	Websock = require('./core/websock_s.js').Websock,
+	auth = require('http-auth'),
+	basic = auth.basic({
+    realm: "main",
+    file: __dirname + "/../ioVNCpw.txt"
+    }),
 
     webServer, wsServer,
     source_host, source_port, target_host, target_port,
@@ -49,24 +55,12 @@ new_client = function(client, req) {
 
     var target = net.createConnection(target_port,target_host, function() {
         log('connected to target');
-        rfb = new RFB(target);
+		var _sock = new Websock(target);
+        rfb = new RFB(client,target,_sock);
+		rfb._socketOpen();
     });
-    target.on('data', function(data) {
-        //log("sending message: " + data);
-
-        if (rs) {
-          var tdelta = Math.floor(new Date().getTime()) - start_time;
-          var rsdata = '\'{' + tdelta + '{' + decodeBuffer(data) + '\',\n';
-          rs.write(rsdata);
-        }
-
-        try {
-            client.emit('message', data);
-        } catch(e) {
-            log("Client closed, cleaning up target");
-            target.end();
-        }
-    });
+	
+	
     target.on('end', function() {
         log('target disconnected');
         client.close();
@@ -217,10 +211,12 @@ if (argv.cert) {
     var cert = fs.readFileSync(argv.cert),
         key = fs.readFileSync(argv.key);
     console.log("    - Running in encrypted HTTPS mode using: " + argv.cert + ", " + argv.key);
-    webServer = https.createServer({cert: cert, key: key}, http_request);
+    webServer = https.createServer({cert: cert, key: key}, basic.check(http_request));
 } else {
     console.log("    - Running in unencrypted HTTP mode");
-    webServer = http.createServer(http_request);
+	webServer = http.createServer(
+    basic.check(http_request)
+  )
 }
 webServer.listen(source_port, function() {
     wsServer = require('socket.io')(webServer);
