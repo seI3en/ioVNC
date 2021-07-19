@@ -20,7 +20,7 @@ var argv = require('optimist').argv,
     mime = require('mime-types'),
 
     Buffer = require('buffer').Buffer,
-    RFB = require('./core/rfbclient').RFB,
+    RFB = require('./core/rfb_s.js').RFB,
 	Websock = require('./core/websock_s.js').Websock,
 	auth = require('http-auth'),
 	basic = auth.basic({
