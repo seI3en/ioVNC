@@ -63,7 +63,9 @@ class RFB {
 		this._showDotCursor = false;
 		
 		this._decoders = {};
+        // populate decoder array with objects
 		this._decoders[encodings.encodingRaw] = new RawDecoder();
+        this._decoders[encodings.encodingCopyRect] = new CopyRectDecoder();
 		
 		this.unfinished_rect = false;
 		
