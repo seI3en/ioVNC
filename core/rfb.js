@@ -273,7 +273,18 @@ export default class RFB extends EventTargetMixin {
 		this._display.blitImage(x, curY, width, currHeight, data, index);
 		this._display.flip();
         });
-		
+
+		this._sock.on("fbu_copy_image", (deltaX, deltaY, x, y, width, height) => {
+			// can't call off server-side FBU processing anyway
+			/*if (this._display.pending()) {
+                this._flushing = true;
+                this._display.flush();
+                return false;
+            }*/
+		this._display.copyImage(deltaX, deltaY, x, y, width, height);
+		this._display.flip();
+        });
+
 		this._sock.on("fbu_cursor_change", (rgbaPixels, hotx, hoty, w, h) => {
 			// can't call off server-side FBU processing anyway
 			/*if (this._display.pending()) {

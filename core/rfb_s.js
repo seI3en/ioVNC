@@ -2,6 +2,7 @@ var Log = require('./util/logging_s.js');
 var DES = require('./des_s.js').DES;
 var encodings = require('./encodings_s.js').encodings;
 var RawDecoder = require('./decoders/raw_s.js').RawDecoder;
+var CopyRectDecoder = require('./decoders/copyrect_s.js').CopyRectDecoder;
 
 class RFB {
 
@@ -698,7 +699,7 @@ class RFB {
         const encs = [];
 
         // In preference order
-        //encs.push(encodings.encodingCopyRect); // commented out for test purposes
+        encs.push(encodings.encodingCopyRect);
         // Only supported with full depth support
         /*if (this._fbDepth == 24) {  // commented out for test purposes
             encs.push(encodings.encodingTight);
