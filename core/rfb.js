@@ -252,16 +252,53 @@ export default class RFB extends EventTargetMixin {
 			this._updateConnectionState(state);
         });
 		
-		this._sock.on("fbu_desktopsize", (width, height) => {
+
+		this._sock.on("fbu_pseudoEncodingLastRect", () => {
 			// can't call off server-side FBU processing anyway
 			/*if (this._display.pending()) {
                 this._flushing = true;
                 this._display.flush();
                 return false;
             }*/
-			this._resize(width, height);
-			this._display.flip();
+		this._FBU.rects = 1; // Will be decreased when we return
+		this._display.flip();
         });
+
+		this._sock.on("fbu_cursor_change", (rgbaPixels, hotx, hoty, w, h) => {
+			// can't call off server-side FBU processing anyway
+			/*if (this._display.pending()) {
+                this._flushing = true;
+                this._display.flush();
+                return false;
+            }*/
+        this._cursor.change(rgbaPixels,
+                            hotx, hoty,
+                            w, h
+        );
+		this._display.flip();
+        });
+		
+		this._sock.on("fbu_qemuExtKeyEventSupported", () => {
+			// can't call off server-side FBU processing anyway
+			/*if (this._display.pending()) {
+                this._flushing = true;
+                this._display.flush();
+                return false;
+            }*/
+		this._qemuExtKeyEventSupported = true;
+		this._display.flip();
+        });
+		
+		this._sock.on("fbu_display_flip", () => {
+			// can't call off server-side FBU processing anyway
+			/*if (this._display.pending()) {
+                this._flushing = true;
+                this._display.flush();
+                return false;
+            }*/
+		this._display.flip();
+        });
+		
 		
 		this._sock.on("fbu_raw_blit", (x, curY, width, currHeight, data, index) => {
 			// can't call off server-side FBU processing anyway
@@ -282,20 +319,6 @@ export default class RFB extends EventTargetMixin {
                 return false;
             }*/
 		this._display.copyImage(deltaX, deltaY, x, y, width, height);
-		this._display.flip();
-        });
-
-		this._sock.on("fbu_cursor_change", (rgbaPixels, hotx, hoty, w, h) => {
-			// can't call off server-side FBU processing anyway
-			/*if (this._display.pending()) {
-                this._flushing = true;
-                this._display.flush();
-                return false;
-            }*/
-        this._cursor.change(rgbaPixels,
-                            hotx, hoty,
-                            w, h
-        );
 		this._display.flip();
         });
 		
@@ -482,13 +505,13 @@ export default class RFB extends EventTargetMixin {
 
             Log.Info("Sending key (" + (down ? "down" : "up") + "): keysym " + keysym + ", scancode " + scancode);
 
-            this._sock._websocket.emit('message',{"event": "extkey", "keysym": keysym, "down": down, "scancode": scancode});
+            RFB.messages.QEMUExtendedKeyEvent(this._sock, keysym, down, scancode);
         } else {
             if (!keysym) {
                 return;
             }
             Log.Info("Sending keysym (" + (down ? "down" : "up") + "): " + keysym);
-            this._sock._websocket.emit('message',{"event": "key", "keysym": keysym, "down": down ? 1 : 0});
+            RFB.messages.keyEvent(this._sock, keysym, down ? 1 : 0);
         }
     }
 
@@ -2620,7 +2643,10 @@ export default class RFB extends EventTargetMixin {
 // Class Methods
 RFB.messages = {
     keyEvent(sock, keysym, down) {
-        const buff = sock._sQ;
+		
+		sock.emit('message',{"event": "key", "keysym": keysym, "down": down});
+		
+        /*const buff = sock._sQ;
         const offset = sock._sQlen;
 
         buff[offset] = 4;  // msg-type
@@ -2635,11 +2661,14 @@ RFB.messages = {
         buff[offset + 7] = keysym;
 
         sock._sQlen += 8;
-        sock.flush();
+        sock.flush();*/
     },
 
     QEMUExtendedKeyEvent(sock, keysym, down, keycode) {
-        function getRFBkeycode(xtScanCode) {
+		
+		sock.emit('message',{"event": "extkey", "keysym": keysym, "down": down, "keycode": keycode});
+		
+        /*function getRFBkeycode(xtScanCode) {
             const upperByte = (keycode >> 8);
             const lowerByte = (keycode & 0x00ff);
             if (upperByte === 0xe0 && lowerByte < 0x7f) {
@@ -2670,11 +2699,14 @@ RFB.messages = {
         buff[offset + 11] = RFBkeycode;
 
         sock._sQlen += 12;
-        sock.flush();
+        sock.flush();*/
     },
 
     pointerEvent(sock, x, y, mask) {
-        const buff = sock._sQ;
+		
+		sock.emit('message',{"event": "pointer", "x": x, "y": y, "mask": mask});
+		
+        /*const buff = sock._sQ;
         const offset = sock._sQlen;
 
         buff[offset] = 5; // msg-type
@@ -2688,7 +2720,7 @@ RFB.messages = {
         buff[offset + 5] = y;
 
         sock._sQlen += 6;
-        sock.flush();
+        sock.flush();*/
     },
 
     // Used to build Notify and Request data.
@@ -2787,7 +2819,10 @@ RFB.messages = {
     },
 
     clientCutText(sock, data, extended = false) {
-        const buff = sock._sQ;
+		
+		sock.emit('message',{"event": "clientCutText", "data": data, "extended": extended});
+		
+        /*const buff = sock._sQ;
         const offset = sock._sQlen;
 
         buff[offset] = 6; // msg-type
@@ -2827,12 +2862,15 @@ RFB.messages = {
 
             remaining -= flushSize;
             dataOffset += flushSize;
-        }
+        }*/
 
     },
 
     setDesktopSize(sock, width, height, id, flags) {
-        const buff = sock._sQ;
+		
+		sock.emit('message',{"event": "setDesktopSize", "width": width, "height": height, "id": id, "flags": flags});
+		
+        /*const buff = sock._sQ;
         const offset = sock._sQlen;
 
         buff[offset] = 251;              // msg-type
@@ -2864,11 +2902,14 @@ RFB.messages = {
         buff[offset + 23] = flags;
 
         sock._sQlen += 24;
-        sock.flush();
+        sock.flush();*/
     },
 
     clientFence(sock, flags, payload) {
-        const buff = sock._sQ;
+		
+		sock.emit('message',{"event": "clientFence", "flags": flags, "payload": payload});
+		
+        /*const buff = sock._sQ;
         const offset = sock._sQlen;
 
         buff[offset] = 248; // msg-type
@@ -2891,11 +2932,14 @@ RFB.messages = {
         }
 
         sock._sQlen += 9 + n;
-        sock.flush();
+        sock.flush();*/
     },
 
     enableContinuousUpdates(sock, enable, x, y, width, height) {
-        const buff = sock._sQ;
+		
+		sock.emit('message',{"event": "enableContinuousUpdates", "enable": enable, "x": x, "y": y, "width": width, "height": height});
+		
+        /*const buff = sock._sQ;
         const offset = sock._sQlen;
 
         buff[offset] = 150;             // msg-type
@@ -2911,11 +2955,14 @@ RFB.messages = {
         buff[offset + 9] = height;
 
         sock._sQlen += 10;
-        sock.flush();
+        sock.flush();*/
     },
 
     pixelFormat(sock, depth, trueColor) {
-        const buff = sock._sQ;
+		
+		sock.emit('message',{"event": "pixelFormat", "depth": depth, "trueColor": trueColor});
+		
+        /*const buff = sock._sQ;
         const offset = sock._sQlen;
 
         let bpp;
@@ -2959,11 +3006,14 @@ RFB.messages = {
         buff[offset + 19] = 0;   // padding
 
         sock._sQlen += 20;
-        sock.flush();
+        sock.flush();*/
     },
 
     clientEncodings(sock, encodings) {
-        const buff = sock._sQ;
+		
+		sock.emit('message',{"event": "clientEncodings", "encodings": encodings});
+		
+        /*const buff = sock._sQ;
         const offset = sock._sQlen;
 
         buff[offset] = 2; // msg-type
@@ -2984,11 +3034,14 @@ RFB.messages = {
         }
 
         sock._sQlen += j - offset;
-        sock.flush();
+        sock.flush();*/
     },
 
     fbUpdateRequest(sock, incremental, x, y, w, h) {
-        const buff = sock._sQ;
+		
+		sock.emit('message',{"event": "fbUpdateRequest", "incremental": incremental, "x": x, "y": y, "w": w, "h": h});
+		
+        /*const buff = sock._sQ;
         const offset = sock._sQlen;
 
         if (typeof(x) === "undefined") { x = 0; }
@@ -3010,11 +3063,14 @@ RFB.messages = {
         buff[offset + 9] = h & 0xFF;
 
         sock._sQlen += 10;
-        sock.flush();
+        sock.flush();*/
     },
 
     xvpOp(sock, ver, op) {
-        const buff = sock._sQ;
+		
+		sock.emit('message',{"event": "xvpOp", "ver": ver, "op": op});
+		
+        /*const buff = sock._sQ;
         const offset = sock._sQlen;
 
         buff[offset] = 250; // msg-type
@@ -3024,7 +3080,7 @@ RFB.messages = {
         buff[offset + 3] = op;
 
         sock._sQlen += 4;
-        sock.flush();
+        sock.flush();*/
     }
 };
 

@@ -8,10 +8,6 @@ class RFB {
 
     constructor(client,target,_sock) {
 		
-		// user-specified
-		this.minServerInitMsgSize = 662;
-		this.minCursorMsgSize = 9520;
-
         this.client = client;
         this.target = target;
 		this._sock = _sock;
@@ -59,8 +55,11 @@ class RFB {
         };
 		
 		this._enabledContinuousUpdates = false;
-		this._cursorImage = null;
+		this._cursorImage = RFB.cursors.none;
 		this._showDotCursor = false;
+		
+		this._supportsSetDesktopSize = false;
+		this._qemuExtKeyEventSupported = false;
 		
 		this._decoders = {};
         // populate decoder array with objects
@@ -70,16 +69,35 @@ class RFB {
 		this.unfinished_rect = false;
 		
 		this._sock.on('message', this._handleData.bind(this));
+		client.on('message', this._handleMessage.bind(this));
 		
     }
 
     _handleMessage(msg) {
         if (msg["event"] == "key") {
-            this.keyEvent(msg["keysym"], msg["down"]);
+			RFB.messages.keyEvent(this._sock, msg["keysym"], msg["down"]);
         } else if (msg["event"] == "extkey") {
-            this.QEMUExtendedKeyEvent(msg["keysym"], msg["down"], msg["scancode"]);
+			RFB.messages.QEMUExtendedKeyEvent(this._sock, msg["keysym"], msg["down"], msg["keycode"]);
+        } else if (msg["event"] == "pointer") {
+			RFB.messages.pointerEvent(this._sock, msg["x"], msg["y"], msg["mask"]);
+        } else if (msg["event"] == "clientCutText") {
+			RFB.messages.clientCutText(this._sock, msg["data"], msg["extended"]);
+        } else if (msg["event"] == "setDesktopSize") {
+			RFB.messages.setDesktopSize(this._sock, msg["width"], msg["height"], msg["id"], msg["flags"]);
+        } else if (msg["event"] == "clientFence") {
+			RFB.messages.clientFence(this._sock, msg["flags"], msg["payload"]);
+        } else if (msg["event"] == "enableContinuousUpdates") {
+			RFB.messages.enableContinuousUpdates(this._sock, msg["enable"], msg["x"], msg["y"], msg["width"], msg["height"]);
+        } else if (msg["event"] == "pixelFormat") {
+			RFB.messages.pixelFormat(this._sock, msg["depth"], msg["trueColor"]);
+        } else if (msg["event"] == "clientEncodings") {
+			RFB.messages.clientEncodings(this._sock, msg["encodings"]);
+        } else if (msg["event"] == "fbUpdateRequest") {
+			RFB.messages.fbUpdateRequest(this._sock, msg["incremental"], msg["x"], msg["y"], msg["w"], msg["h"]);
+        } else if (msg["event"] == "xvpOp") {
+			RFB.messages.xvpOp(this._sock, msg["ver"], msg["op"]);
         } else {
-            this.target.write(msg);
+            this._sock.send(msg);
         }
     }
 
@@ -703,12 +721,12 @@ class RFB {
         // In preference order
         encs.push(encodings.encodingCopyRect);
         // Only supported with full depth support
-        /*if (this._fbDepth == 24) {  // commented out for test purposes
-            encs.push(encodings.encodingTight);
-            encs.push(encodings.encodingTightPNG);
-            encs.push(encodings.encodingHextile);
-            encs.push(encodings.encodingRRE);
-        }*/
+        if (this._fbDepth == 24) {
+            //encs.push(encodings.encodingTight);
+            //encs.push(encodings.encodingTightPNG);
+            //encs.push(encodings.encodingHextile);
+            //encs.push(encodings.encodingRRE);
+        }
         encs.push(encodings.encodingRaw);
 
         // Psuedo-encoding settings
@@ -718,17 +736,17 @@ class RFB {
         encs.push(encodings.pseudoEncodingDesktopSize);
         encs.push(encodings.pseudoEncodingLastRect);
         encs.push(encodings.pseudoEncodingQEMUExtendedKeyEvent);
-        encs.push(encodings.pseudoEncodingExtendedDesktopSize);
-        encs.push(encodings.pseudoEncodingXvp);
-        encs.push(encodings.pseudoEncodingFence);
-        encs.push(encodings.pseudoEncodingContinuousUpdates);
+        //encs.push(encodings.pseudoEncodingExtendedDesktopSize);
+        //encs.push(encodings.pseudoEncodingXvp);
+        //encs.push(encodings.pseudoEncodingFence);
+        //encs.push(encodings.pseudoEncodingContinuousUpdates);
         encs.push(encodings.pseudoEncodingDesktopName);
-        encs.push(encodings.pseudoEncodingExtendedClipboard);
+        //encs.push(encodings.pseudoEncodingExtendedClipboard);
 
-        /*if (this._fbDepth == 24) {  // commented out for test purposes
+        if (this._fbDepth == 24) {
             encs.push(encodings.pseudoEncodingVMwareCursor);
             encs.push(encodings.pseudoEncodingCursor);
-        }*/
+        }
 
         RFB.messages.clientEncodings(this._sock, encs);
     }
@@ -876,6 +894,7 @@ class RFB {
         switch (this._FBU.encoding) {
             case encodings.pseudoEncodingLastRect:
                 this._FBU.rects = 1; // Will be decreased when we return
+				this.client.emit("fbu_pseudoEncodingLastRect");
                 return true;
 
             case encodings.pseudoEncodingVMwareCursor:
@@ -886,16 +905,15 @@ class RFB {
 
             case encodings.pseudoEncodingQEMUExtendedKeyEvent:
                 this._qemuExtKeyEventSupported = true;
+				this.client.emit("fbu_qemuExtKeyEventSupported");
                 return true;
 
             case encodings.pseudoEncodingDesktopName:
                 return this._handleDesktopName();
 
             case encodings.pseudoEncodingDesktopSize:
-				this._fbWidth = this._FBU.width;
-                this._fbHeight = this._FBU.height;
-                this._updateContinuousUpdates();
-				this.client.emit("fbu_desktopsize",this._FBU.width, this._FBU.height);
+				this._resize(this._FBU.width, this._FBU.height);
+				this.client.emit("fbu_display_flip");
                 return true;
 
             case encodings.pseudoEncodingExtendedDesktopSize:
@@ -906,30 +924,123 @@ class RFB {
         }
     }
 
-    _handleDataRect() {
-        let decoder = this._decoders[this._FBU.encoding];
-        if (!decoder) {
-            this._fail("Unsupported encoding (encoding: " +
-                       this._FBU.encoding + ")");
+    _handleVMwareCursor() {
+        const hotx = this._FBU.x;  // hotspot-x
+        const hoty = this._FBU.y;  // hotspot-y
+        const w = this._FBU.width;
+        const h = this._FBU.height;
+        if (this._sock.rQwait("VMware cursor encoding", 1)) {
             return false;
         }
 
-        try {
-            return decoder.decodeRect(this._FBU.x, this._FBU.y,
-                                      this._FBU.width, this._FBU.height,
-                                      this._sock, this.client,
-                                      this._fbDepth);
-        } catch (err) {
-            this._fail("Error decoding rect: " + err);
+        const cursorType = this._sock.rQshift8();
+
+        this._sock.rQshift8(); //Padding
+
+        let rgba;
+        const bytesPerPixel = 4;
+
+        //Classic cursor
+        if (cursorType == 0) {
+            //Used to filter away unimportant bits.
+            //OR is used for correct conversion in js.
+            const PIXEL_MASK = 0xffffff00 | 0;
+            rgba = new Array(w * h * bytesPerPixel);
+
+            if (this._sock.rQwait("VMware cursor classic encoding",
+                                  (w * h * bytesPerPixel) * 2, 2)) {
+                return false;
+            }
+
+            let andMask = new Array(w * h);
+            for (let pixel = 0; pixel < (w * h); pixel++) {
+                andMask[pixel] = this._sock.rQshift32();
+            }
+
+            let xorMask = new Array(w * h);
+            for (let pixel = 0; pixel < (w * h); pixel++) {
+                xorMask[pixel] = this._sock.rQshift32();
+            }
+
+            for (let pixel = 0; pixel < (w * h); pixel++) {
+                if (andMask[pixel] == 0) {
+                    //Fully opaque pixel
+                    let bgr = xorMask[pixel];
+                    let r   = bgr >> 8  & 0xff;
+                    let g   = bgr >> 16 & 0xff;
+                    let b   = bgr >> 24 & 0xff;
+
+                    rgba[(pixel * bytesPerPixel)     ] = r;    //r
+                    rgba[(pixel * bytesPerPixel) + 1 ] = g;    //g
+                    rgba[(pixel * bytesPerPixel) + 2 ] = b;    //b
+                    rgba[(pixel * bytesPerPixel) + 3 ] = 0xff; //a
+
+                } else if ((andMask[pixel] & PIXEL_MASK) ==
+                           PIXEL_MASK) {
+                    //Only screen value matters, no mouse colouring
+                    if (xorMask[pixel] == 0) {
+                        //Transparent pixel
+                        rgba[(pixel * bytesPerPixel)     ] = 0x00;
+                        rgba[(pixel * bytesPerPixel) + 1 ] = 0x00;
+                        rgba[(pixel * bytesPerPixel) + 2 ] = 0x00;
+                        rgba[(pixel * bytesPerPixel) + 3 ] = 0x00;
+
+                    } else if ((xorMask[pixel] & PIXEL_MASK) ==
+                               PIXEL_MASK) {
+                        //Inverted pixel, not supported in browsers.
+                        //Fully opaque instead.
+                        rgba[(pixel * bytesPerPixel)     ] = 0x00;
+                        rgba[(pixel * bytesPerPixel) + 1 ] = 0x00;
+                        rgba[(pixel * bytesPerPixel) + 2 ] = 0x00;
+                        rgba[(pixel * bytesPerPixel) + 3 ] = 0xff;
+
+                    } else {
+                        //Unhandled xorMask
+                        rgba[(pixel * bytesPerPixel)     ] = 0x00;
+                        rgba[(pixel * bytesPerPixel) + 1 ] = 0x00;
+                        rgba[(pixel * bytesPerPixel) + 2 ] = 0x00;
+                        rgba[(pixel * bytesPerPixel) + 3 ] = 0xff;
+                    }
+
+                } else {
+                    //Unhandled andMask
+                    rgba[(pixel * bytesPerPixel)     ] = 0x00;
+                    rgba[(pixel * bytesPerPixel) + 1 ] = 0x00;
+                    rgba[(pixel * bytesPerPixel) + 2 ] = 0x00;
+                    rgba[(pixel * bytesPerPixel) + 3 ] = 0xff;
+                }
+            }
+
+        //Alpha cursor.
+        } else if (cursorType == 1) {
+            if (this._sock.rQwait("VMware cursor alpha encoding",
+                                  (w * h * 4), 2)) {
+                return false;
+            }
+
+            rgba = new Array(w * h * bytesPerPixel);
+
+            for (let pixel = 0; pixel < (w * h); pixel++) {
+                let data = this._sock.rQshift32();
+
+                rgba[(pixel * 4)     ] = data >> 24 & 0xff; //r
+                rgba[(pixel * 4) + 1 ] = data >> 16 & 0xff; //g
+                rgba[(pixel * 4) + 2 ] = data >> 8 & 0xff;  //b
+                rgba[(pixel * 4) + 3 ] = data & 0xff;       //a
+            }
+
+        } else {
+            Log.Warn("The given cursor type is not supported: "
+                      + cursorType + " given.");
             return false;
         }
+
+        this._updateCursor(rgba, hotx, hoty, w, h);
+
+        return true;
     }
 
     _handleCursor() {
-		Log.Debug("_handleCursor msg length at enter: " + this._rQ.length);
-		if (this._rQ.length < this.minCursorMsgSize) { return false; }
-
-			
         const hotx = this._FBU.x;  // hotspot-x
         const hoty = this._FBU.y;  // hotspot-y
         const w = this._FBU.width;
@@ -939,15 +1050,13 @@ class RFB {
         const masklength = Math.ceil(w / 8) * h;
 
         let bytes = pixelslength + masklength;
-        //if (this._sock.rQwait("cursor encoding", bytes)) {
-        //    return false;
-        //}
+        if (this._sock.rQwait("cursor encoding", bytes)) {
+            return false;
+        }
 
         // Decode from BGRX pixels + bit mask to RGBA
-        //const pixels = this._sock.rQshiftBytes(pixelslength);
-		const pixels = this._rQ.slice(16, 16 + pixelslength);
-        //const mask = this._sock.rQshiftBytes(masklength);
-		const mask = this._rQ.slice(16 + pixelslength, 16 + pixelslength + masklength);
+        const pixels = this._sock.rQshiftBytes(pixelslength);
+        const mask = this._sock.rQshiftBytes(masklength);
         let rgba = new Uint8Array(w * h * 4);
 
         let pixIdx = 0;
@@ -964,11 +1073,8 @@ class RFB {
         }
 
         this._updateCursor(rgba, hotx, hoty, w, h);
-		
-		this._rQ = null; // message processed
 
         return true;
-		
     }
 
     _updateCursor(rgba, hotx, hoty, w, h) {
@@ -977,19 +1083,6 @@ class RFB {
             hotx: hotx, hoty: hoty, w: w, h: h,
         };
         this._refreshCursor();
-    }
-
-    _refreshCursor() {
-        if (this._rfbConnectionState !== "connecting" &&
-            this._rfbConnectionState !== "connected") {
-            return;
-        }
-        const image = this._shouldShowDotCursor() ? RFB.cursors.dot : this._cursorImage;
-        //this._cursor.change(image.rgbaPixels,
-        //                    image.hotx, image.hoty,
-        //                    image.w, image.h
-        //);
-		this.client.emit("fbu_cursor_change", image.rgbaPixels, image.hotx, image.hoty, image.w, image.h);
     }
 
     _shouldShowDotCursor() {
@@ -1012,6 +1105,172 @@ class RFB {
         // At this point, we know that the cursor is fully transparent, and
         // the user wants to see the dot instead of this.
         return true;
+    }
+
+    _refreshCursor() {
+        if (this._rfbConnectionState !== "connecting" &&
+            this._rfbConnectionState !== "connected") {
+            return;
+        }
+        const image = this._shouldShowDotCursor() ? RFB.cursors.dot : this._cursorImage;
+        /*this._cursor.change(image.rgbaPixels,
+                            image.hotx, image.hoty,
+                            image.w, image.h
+        );*/
+		this.client.emit("fbu_cursor_change", image.rgbaPixels, image.hotx, image.hoty, image.w, image.h);
+    }
+
+    _handleDesktopName() {
+        if (this._sock.rQwait("DesktopName", 4)) {
+            return false;
+        }
+
+        let length = this._sock.rQshift32();
+
+        if (this._sock.rQwait("DesktopName", length, 4)) {
+            return false;
+        }
+
+        let name = this._sock.rQshiftStr(length);
+        //name = decodeUTF8(name, true);
+		name = name.toString('utf8');
+
+        this._setDesktopName(name);
+        this.client.emit("fbu_display_flip");
+		
+        return true;
+    }
+
+    _handleExtendedDesktopSize() {
+        if (this._sock.rQwait("ExtendedDesktopSize", 4)) {
+            return false;
+        }
+
+        const numberOfScreens = this._sock.rQpeek8();
+
+        let bytes = 4 + (numberOfScreens * 16);
+        if (this._sock.rQwait("ExtendedDesktopSize", bytes)) {
+            return false;
+        }
+
+        const firstUpdate = !this._supportsSetDesktopSize;
+        this._supportsSetDesktopSize = true;
+
+        // Normally we only apply the current resize mode after a
+        // window resize event. However there is no such trigger on the
+        // initial connect. And we don't know if the server supports
+        // resizing until we've gotten here.
+        if (firstUpdate) {
+            //this._requestRemoteResize(); _requestRemoteResize() calls _screenSize(), _screenSize() calls this._screen.getBoundingClientRect(), this._screen is a DIV element in the showing page
+	                                    // so this function will fail on the webserver		
+        }
+
+        this._sock.rQskipBytes(1);  // number-of-screens
+        this._sock.rQskipBytes(3);  // padding
+
+        for (let i = 0; i < numberOfScreens; i += 1) {
+            // Save the id and flags of the first screen
+            if (i === 0) {
+                this._screenID = this._sock.rQshiftBytes(4);    // id
+                this._sock.rQskipBytes(2);                       // x-position
+                this._sock.rQskipBytes(2);                       // y-position
+                this._sock.rQskipBytes(2);                       // width
+                this._sock.rQskipBytes(2);                       // height
+                this._screenFlags = this._sock.rQshiftBytes(4); // flags
+            } else {
+                this._sock.rQskipBytes(16);
+            }
+        }
+
+        /*
+         * The x-position indicates the reason for the change:
+         *
+         *  0 - server resized on its own
+         *  1 - this client requested the resize
+         *  2 - another client requested the resize
+         */
+
+        // We need to handle errors when we requested the resize.
+        if (this._FBU.x === 1 && this._FBU.y !== 0) {
+            let msg = "";
+            // The y-position indicates the status code from the server
+            switch (this._FBU.y) {
+                case 1:
+                    msg = "Resize is administratively prohibited";
+                    break;
+                case 2:
+                    msg = "Out of resources";
+                    break;
+                case 3:
+                    msg = "Invalid screen layout";
+                    break;
+                default:
+                    msg = "Unknown reason";
+                    break;
+            }
+            Log.Warn("Server did not accept the resize request: "
+                     + msg);
+        } else {
+            this._resize(this._FBU.width, this._FBU.height);
+			this.client.emit("fbu_display_flip");
+        }
+
+        return true;
+    }
+
+    _handleDataRect() {
+        let decoder = this._decoders[this._FBU.encoding];
+        if (!decoder) {
+            this._fail("Unsupported encoding (encoding: " +
+                       this._FBU.encoding + ")");
+            return false;
+        }
+
+        try {
+            return decoder.decodeRect(this._FBU.x, this._FBU.y,
+                                      this._FBU.width, this._FBU.height,
+                                      this._sock, this.client,
+                                      this._fbDepth);
+        } catch (err) {
+            this._fail("Error decoding rect: " + err);
+            return false;
+        }
+    }
+
+    _handleSetColourMapMsg() {
+        Log.Debug("SetColorMapEntries");
+
+        return this._fail("Unexpected SetColorMapEntries message");
+    }
+
+    /* Print errors and disconnect
+     *
+     * The parameter 'details' is used for information that
+     * should be logged but not sent to the user interface.
+     */
+    _fail(details) {
+        switch (this._rfbConnectionState) {
+            case 'disconnecting':
+                Log.Error("Failed when disconnecting: " + details);
+                break;
+            case 'connected':
+                Log.Error("Failed while connected: " + details);
+                break;
+            case 'connecting':
+                Log.Error("Failed when connecting: " + details);
+                break;
+            default:
+                Log.Error("RFB failure: " + details);
+                break;
+        }
+        this._rfbCleanDisconnect = false; //This is sent to the UI
+
+        // Transition to disconnected without waiting for socket to close
+        //this._updateConnectionState('disconnecting');
+        //this._updateConnectionState('disconnected');
+		this._rfbConnectionState = 'disconnected';
+
+        return false;
     }
 
     static genDES(password, challenge) {
