@@ -282,10 +282,12 @@ class Websock {
             if (this.readyState === 'connecting' ||
                 this.readyState === 'open') {
                 Log.Info("Closing WebSocket connection");
-                this._websocket.close();
+                //this._websocket.close();
+				this._websocket.end();
             }
 
-            this._websocket.onmessage = () => {};
+            //this._websocket.onmessage = () => {};
+			this._websocket.on('data', () => {} );
         }
     }
 

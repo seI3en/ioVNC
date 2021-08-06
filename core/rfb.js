@@ -300,14 +300,15 @@ export default class RFB extends EventTargetMixin {
         });
 		
 		
-		this._sock.on("fbu_raw_blit", (x, curY, width, currHeight, data, index) => {
+		this._sock.on("fbu_raw_blit", (x, curY, width, currHeight, data, index, fromQueue) => {
 			// can't call off server-side FBU processing anyway
 			/*if (this._display.pending()) {
                 this._flushing = true;
                 this._display.flush();
                 return false;
             }*/
-		this._display.blitImage(x, curY, width, currHeight, data, index);
+		//console.log("data length: " + data.byteLength + ", index: " + index + ", fromQueue: " + fromQueue);
+		this._display.blitImage(x, curY, width, currHeight, data, index, fromQueue);
 		this._display.flip();
         });
 
@@ -322,6 +323,39 @@ export default class RFB extends EventTargetMixin {
 		this._display.flip();
         });
 		
+		this._sock.on("fbu_fill_rect", (x, y, width, height, color, fromQueue) => {
+			// can't call off server-side FBU processing anyway
+			/*if (this._display.pending()) {
+                this._flushing = true;
+                this._display.flush();
+                return false;
+            }*/
+		this._display.fillRect(x, y, width, height, color, fromQueue);
+		this._display.flip();
+        });
+
+		this._sock.on("fbu_image_rect", (x, y, width, height, mimetype, data) => {
+			// can't call off server-side FBU processing anyway
+			/*if (this._display.pending()) {
+                this._flushing = true;
+                this._display.flush();
+                return false;
+            }*/
+		this._display.imageRect(x, y, width, height, mimetype, data);
+		this._display.flip();
+        });
+		
+		this._sock.on("bell", () => {
+              this.dispatchEvent(new CustomEvent(
+                    "bell",
+                    { detail: {} }));
+        });
+		
+		this._sock.on("clipboard", (text) => {
+            this.dispatchEvent(new CustomEvent(
+                "clipboard",
+                { detail: { text: text } }));
+			});
 		
         //this._sock.on('error', this._socketError.bind(this));
 

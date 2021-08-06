@@ -63,15 +63,24 @@ new_client = function(client, req) {
 	
     target.on('end', function() {
         log('target disconnected');
-        client.close();
+        //client.close();
+		        if (client) {
+                 client.close();
+                 client.on('message', () => {});
+        }
         if (rs) {
           rs.end('\'EOF\'];\n');
         }
     });
     target.on('error', function() {
         log('target connection error');
-        target.end();
-        client.close();
+        //target.end();
+		rfb._socketClose();
+        //client.close();
+				if (client) {
+                 client.close();
+                 client.on('message', () => {});
+        }
         if (rs) {
           rs.end('\'EOF\'];\n');
         }
@@ -90,11 +99,13 @@ new_client = function(client, req) {
     });
     client.on('close', function(code, reason) {
         log('socket.IO client disconnected: ' + code + ' [' + reason + ']');
-        target.end();
+        //target.end();
+		rfb._socketClose();
     });
     client.on('error', function(a) {
         log('socket.IO client error: ' + a);
-        target.end();
+        //target.end();
+		rfb._socketClose();
     });
 };
 

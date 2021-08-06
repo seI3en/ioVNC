@@ -355,7 +355,10 @@ export default class Display {
         }
 
         const img = new Image();
-        img.src = "data: " + mime + ";base64," + Base64.encode(arr);
+		/* Base64.encode() needs a common JS array, not ArrayBuffer as received from io_socket.emit() */
+		const typedArray = new Uint8Array(arr);
+        const array = Array.from(typedArray);
+        img.src = "data: " + mime + ";base64," + Base64.encode(array);
 
         this._renderQPush({
             'type': 'img',

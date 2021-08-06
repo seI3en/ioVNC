@@ -3,6 +3,8 @@ var DES = require('./des_s.js').DES;
 var encodings = require('./encodings_s.js').encodings;
 var RawDecoder = require('./decoders/raw_s.js').RawDecoder;
 var CopyRectDecoder = require('./decoders/copyrect_s.js').CopyRectDecoder;
+var TightDecoder = require('./decoders/tight_s.js').TightDecoder;
+var Inflator = require("./inflator_s.js").Inflate;
 
 class RFB {
 
@@ -65,11 +67,12 @@ class RFB {
         // populate decoder array with objects
 		this._decoders[encodings.encodingRaw] = new RawDecoder();
         this._decoders[encodings.encodingCopyRect] = new CopyRectDecoder();
+		this._decoders[encodings.encodingTight] = new TightDecoder();
 		
 		this.unfinished_rect = false;
 		
 		this._sock.on('message', this._handleData.bind(this));
-		client.on('message', this._handleMessage.bind(this));
+		//client.on('message', this._handleMessage.bind(this));
 		
     }
 
@@ -110,6 +113,47 @@ class RFB {
             this._fail("Unexpected server connection while " +
                        this._rfbConnectionState);
         }
+    }
+
+    _socketClose(e) {
+        Log.Debug("WebSocket on-close event");
+        let msg = "";
+        if (e.code) {
+            msg = "(code: " + e.code;
+            if (e.reason) {
+                msg += ", reason: " + e.reason;
+            }
+            msg += ")";
+        }
+		
+		this._rfbConnectionState = 'disconnected';
+		
+        /*switch (this._rfbConnectionState) {
+            case 'connecting':
+                this._fail("Connection closed " + msg);
+                break;
+            case 'connected':
+                // Handle disconnects that were initiated server-side
+                this._updateConnectionState('disconnecting');
+                this._updateConnectionState('disconnected');
+                break;
+            case 'disconnecting':
+                // Normal disconnection path
+                this._updateConnectionState('disconnected');
+                break;
+            case 'disconnected':
+                this._fail("Unexpected server disconnect " +
+                           "when already disconnected " + msg);
+                break;
+            default:
+                this._fail("Unexpected server disconnect before connecting " +
+                           msg);
+                break;
+        }*/
+        //this._sock.off('close');
+		this._sock.close();
+        // Delete reference to raw channel to allow cleanup.
+        // this._rawChannel = null;
     }
 
     _handleData() {
@@ -722,7 +766,7 @@ class RFB {
         encs.push(encodings.encodingCopyRect);
         // Only supported with full depth support
         if (this._fbDepth == 24) {
-            //encs.push(encodings.encodingTight);
+            encs.push(encodings.encodingTight);
             //encs.push(encodings.encodingTightPNG);
             //encs.push(encodings.encodingHextile);
             //encs.push(encodings.encodingRRE);
@@ -737,11 +781,11 @@ class RFB {
         encs.push(encodings.pseudoEncodingLastRect);
         encs.push(encodings.pseudoEncodingQEMUExtendedKeyEvent);
         //encs.push(encodings.pseudoEncodingExtendedDesktopSize);
-        //encs.push(encodings.pseudoEncodingXvp);
-        //encs.push(encodings.pseudoEncodingFence);
-        //encs.push(encodings.pseudoEncodingContinuousUpdates);
+        encs.push(encodings.pseudoEncodingXvp);
+        encs.push(encodings.pseudoEncodingFence);
+        encs.push(encodings.pseudoEncodingContinuousUpdates);
         encs.push(encodings.pseudoEncodingDesktopName);
-        //encs.push(encodings.pseudoEncodingExtendedClipboard);
+        encs.push(encodings.pseudoEncodingExtendedClipboard);
 
         if (this._fbDepth == 24) {
             encs.push(encodings.pseudoEncodingVMwareCursor);
@@ -813,9 +857,10 @@ class RFB {
 
             case 2:  // Bell
                 Log.Debug("Bell");
-                this.dispatchEvent(new CustomEvent(
-                    "bell",
-                    { detail: {} }));
+                //this.dispatchEvent(new CustomEvent(
+                //    "bell",
+                //    { detail: {} }));
+				client.emit("bell");
                 return true;
 
             case 3:  // ServerCutText
@@ -875,6 +920,7 @@ class RFB {
                 this._FBU.height   = (hdr[6] << 8) + hdr[7];
                 this._FBU.encoding = parseInt((hdr[8] << 24) + (hdr[9] << 16) +
                                               (hdr[10] << 8) + hdr[11], 10);
+				//Log.Debug("FBU encoding: " + this._FBU.encoding);
             }
 
             if (!this._handleRect()) {
@@ -1242,6 +1288,243 @@ class RFB {
 
         return this._fail("Unexpected SetColorMapEntries message");
     }
+
+    _handleServerCutText() {
+        Log.Debug("ServerCutText");
+
+        if (this._sock.rQwait("ServerCutText header", 7, 1)) { return false; }
+
+        this._sock.rQskipBytes(3);  // Padding
+
+        let length = this._sock.rQshift32();
+        length = toSigned32bit(length);
+
+        if (this._sock.rQwait("ServerCutText content", Math.abs(length), 8)) { return false; }
+
+        if (length >= 0) {
+            //Standard msg
+            const text = this._sock.rQshiftStr(length);
+            if (this._viewOnly) {
+                return true;
+            }
+
+            //this.dispatchEvent(new CustomEvent(
+            //    "clipboard",
+            //    { detail: { text: text } }));
+			client.emit("clipboard", text);
+
+        } else {
+            //Extended msg.
+            length = Math.abs(length);
+            const flags = this._sock.rQshift32();
+            let formats = flags & 0x0000FFFF;
+            let actions = flags & 0xFF000000;
+
+            let isCaps = (!!(actions & extendedClipboardActionCaps));
+            if (isCaps) {
+                this._clipboardServerCapabilitiesFormats = {};
+                this._clipboardServerCapabilitiesActions = {};
+
+                // Update our server capabilities for Formats
+                for (let i = 0; i <= 15; i++) {
+                    let index = 1 << i;
+
+                    // Check if format flag is set.
+                    if ((formats & index)) {
+                        this._clipboardServerCapabilitiesFormats[index] = true;
+                        // We don't send unsolicited clipboard, so we
+                        // ignore the size
+                        this._sock.rQshift32();
+                    }
+                }
+
+                // Update our server capabilities for Actions
+                for (let i = 24; i <= 31; i++) {
+                    let index = 1 << i;
+                    this._clipboardServerCapabilitiesActions[index] = !!(actions & index);
+                }
+
+                /*  Caps handling done, send caps with the clients
+                    capabilities set as a response */
+                let clientActions = [
+                    extendedClipboardActionCaps,
+                    extendedClipboardActionRequest,
+                    extendedClipboardActionPeek,
+                    extendedClipboardActionNotify,
+                    extendedClipboardActionProvide
+                ];
+                RFB.messages.extendedClipboardCaps(this._sock, clientActions, {extendedClipboardFormatText: 0});
+
+            } else if (actions === extendedClipboardActionRequest) {
+                if (this._viewOnly) {
+                    return true;
+                }
+
+                // Check if server has told us it can handle Provide and there is clipboard data to send.
+                if (this._clipboardText != null &&
+                    this._clipboardServerCapabilitiesActions[extendedClipboardActionProvide]) {
+
+                    if (formats & extendedClipboardFormatText) {
+                        RFB.messages.extendedClipboardProvide(this._sock, [extendedClipboardFormatText], [this._clipboardText]);
+                    }
+                }
+
+            } else if (actions === extendedClipboardActionPeek) {
+                if (this._viewOnly) {
+                    return true;
+                }
+
+                if (this._clipboardServerCapabilitiesActions[extendedClipboardActionNotify]) {
+
+                    if (this._clipboardText != null) {
+                        RFB.messages.extendedClipboardNotify(this._sock, [extendedClipboardFormatText]);
+                    } else {
+                        RFB.messages.extendedClipboardNotify(this._sock, []);
+                    }
+                }
+
+            } else if (actions === extendedClipboardActionNotify) {
+                if (this._viewOnly) {
+                    return true;
+                }
+
+                if (this._clipboardServerCapabilitiesActions[extendedClipboardActionRequest]) {
+
+                    if (formats & extendedClipboardFormatText) {
+                        RFB.messages.extendedClipboardRequest(this._sock, [extendedClipboardFormatText]);
+                    }
+                }
+
+            } else if (actions === extendedClipboardActionProvide) {
+                if (this._viewOnly) {
+                    return true;
+                }
+
+                if (!(formats & extendedClipboardFormatText)) {
+                    return true;
+                }
+                // Ignore what we had in our clipboard client side.
+                this._clipboardText = null;
+
+                // FIXME: Should probably verify that this data was actually requested
+                let zlibStream = this._sock.rQshiftBytes(length - 4);
+                let streamInflator = new Inflator();
+                let textData = null;
+
+                streamInflator.setInput(zlibStream);
+                for (let i = 0; i <= 15; i++) {
+                    let format = 1 << i;
+
+                    if (formats & format) {
+
+                        let size = 0x00;
+                        let sizeArray = streamInflator.inflate(4);
+
+                        size |= (sizeArray[0] << 24);
+                        size |= (sizeArray[1] << 16);
+                        size |= (sizeArray[2] << 8);
+                        size |= (sizeArray[3]);
+                        let chunk = streamInflator.inflate(size);
+
+                        if (format === extendedClipboardFormatText) {
+                            textData = chunk;
+                        }
+                    }
+                }
+                streamInflator.setInput(null);
+
+                if (textData !== null) {
+                    let tmpText = "";
+                    for (let i = 0; i < textData.length; i++) {
+                        tmpText += String.fromCharCode(textData[i]);
+                    }
+                    textData = tmpText;
+
+                    //textData = decodeUTF8(textData);
+					textData = textData.toString('utf8');
+                    if ((textData.length > 0) && "\0" === textData.charAt(textData.length - 1)) {
+                        textData = textData.slice(0, -1);
+                    }
+
+                    textData = textData.replace("\r\n", "\n");
+
+                    //this.dispatchEvent(new CustomEvent(
+                    //    "clipboard",
+                    //    { detail: { text: textData } }));
+					client.emit("clipboard", textData);
+                }
+            } else {
+                return this._fail("Unexpected action in extended clipboard message: " + actions);
+            }
+        }
+        return true;
+    }
+
+    _handleServerFenceMsg() {
+        if (this._sock.rQwait("ServerFence header", 8, 1)) { return false; }
+        this._sock.rQskipBytes(3); // Padding
+        let flags = this._sock.rQshift32();
+        let length = this._sock.rQshift8();
+
+        if (this._sock.rQwait("ServerFence payload", length, 9)) { return false; }
+
+        if (length > 64) {
+            Log.Warn("Bad payload length (" + length + ") in fence response");
+            length = 64;
+        }
+
+        const payload = this._sock.rQshiftStr(length);
+
+        this._supportsFence = true;
+
+        /*
+         * Fence flags
+         *
+         *  (1<<0)  - BlockBefore
+         *  (1<<1)  - BlockAfter
+         *  (1<<2)  - SyncNext
+         *  (1<<31) - Request
+         */
+
+        if (!(flags & (1<<31))) {
+            return this._fail("Unexpected fence response");
+        }
+
+        // Filter out unsupported flags
+        // FIXME: support syncNext
+        flags &= (1<<0) | (1<<1);
+
+        // BlockBefore and BlockAfter are automatically handled by
+        // the fact that we process each incoming message
+        // synchronuosly.
+        RFB.messages.clientFence(this._sock, flags, payload);
+
+        return true;
+    }
+
+    _handleXvpMsg() {
+        if (this._sock.rQwait("XVP version and message", 3, 1)) { return false; }
+        this._sock.rQskipBytes(1);  // Padding
+        const xvpVer = this._sock.rQshift8();
+        const xvpMsg = this._sock.rQshift8();
+
+        switch (xvpMsg) {
+            case 0:  // XVP_FAIL
+                Log.Error("XVP Operation Failed");
+                break;
+            case 1:  // XVP_INIT
+                this._rfbXvpVer = xvpVer;
+                Log.Info("XVP extensions enabled (version " + this._rfbXvpVer + ")");
+                this._setCapability("power", true);
+                break;
+            default:
+                this._fail("Illegal server XVP message (msg: " + xvpMsg + ")");
+                break;
+        }
+
+        return true;
+    }
+
 
     /* Print errors and disconnect
      *
