@@ -1,3 +1,4 @@
+var { toUnsigned32bit, toSigned32bit } = require('./util/int_s.js');
 var Log = require('./util/logging_s.js');
 var DES = require('./des_s.js').DES;
 var encodings = require('./encodings_s.js').encodings;
@@ -117,15 +118,15 @@ class RFB {
 
     _socketClose(e) {
         Log.Debug("WebSocket on-close event");
-        let msg = "";
+        /*let msg = "";
         if (e.code) {
             msg = "(code: " + e.code;
             if (e.reason) {
                 msg += ", reason: " + e.reason;
             }
             msg += ")";
-        }
-		
+        }*/
+
 		this._rfbConnectionState = 'disconnected';
 		
         /*switch (this._rfbConnectionState) {
@@ -1311,7 +1312,7 @@ class RFB {
             //this.dispatchEvent(new CustomEvent(
             //    "clipboard",
             //    { detail: { text: text } }));
-			client.emit("clipboard", text);
+			this.client.emit("clipboard", text);
 
         } else {
             //Extended msg.
@@ -1451,7 +1452,7 @@ class RFB {
                     //this.dispatchEvent(new CustomEvent(
                     //    "clipboard",
                     //    { detail: { text: textData } }));
-					client.emit("clipboard", textData);
+					this.client.emit("clipboard", textData);
                 }
             } else {
                 return this._fail("Unexpected action in extended clipboard message: " + actions);
