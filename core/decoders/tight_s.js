@@ -182,7 +182,7 @@ class TightDecoder {
         }
 
         //display.blitImage(x, y, width, height, rgbx, 0, false);
-		client.emit("fbu_raw_blit", x, y, width, height, rgbx.slice(0,width * height * 4), 0, false);
+		client.emit("fbu_tight_blit", x, y, width, height, rgbx.slice(0,width * height * 4), 0, false);
 
         return true;
     }
@@ -276,7 +276,7 @@ class TightDecoder {
         }
 
         //display.blitImage(x, y, width, height, dest, 0, false);
-		client.emit("fbu_raw_blit", x, y, width, height, dest.slice(0,width * height * 4), 0, false);
+		client.emit("fbu_tight_blit", x, y, width, height, dest.slice(0,width * height * 4), 0, false);
     }
 
     _paletteRect(x, y, width, height, data, palette, client) {
@@ -292,8 +292,8 @@ class TightDecoder {
         }
 
         //display.blitImage(x, y, width, height, dest, 0, false);
-		client.emit("fbu_raw_blit", x, y, width, height, dest.slice(0,width * height * 4), 0, false);
-		//client.emit("fbu_raw_blit", x, y, width, height, dest, 0, false);
+		client.emit("fbu_tight_blit", x, y, width, height, dest.slice(0,width * height * 4), 0, false);
+		//client.emit("fbu_tight_blit", x, y, width, height, dest, 0, false);
     }
 
     _gradientFilter(streamId, x, y, width, height, sock, client, depth) {
