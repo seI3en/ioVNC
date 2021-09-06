@@ -34,7 +34,7 @@ var argv = require('optimist').argv,
 
 
 // Handle new socket.IO client
-new_client = function(client, req) {
+new_client = function(client) {
     var clientAddr = client.client.conn.remoteAddress, log;
     var start_time = new Date().getTime();
     var rfb;
@@ -63,9 +63,10 @@ new_client = function(client, req) {
 	
     target.on('end', function() {
         log('target disconnected');
+		rfb._socketClose();
         //client.close();
 		        if (client) {
-                 client.close();
+                 client.disconnect();
                  client.on('message', () => {});
         }
         if (rs) {
@@ -78,7 +79,7 @@ new_client = function(client, req) {
 		rfb._socketClose();
         //client.close();
 				if (client) {
-                 client.close();
+                 client.disconnect();
                  client.on('message', () => {});
         }
         if (rs) {
@@ -101,11 +102,19 @@ new_client = function(client, req) {
         log('socket.IO client disconnected: ' + code + ' [' + reason + ']');
         //target.end();
 		rfb._socketClose();
+		if (client) {
+                 client.disconnect();
+                 client.on('message', () => {});
+        }
     });
     client.on('error', function(a) {
         log('socket.IO client error: ' + a);
         //target.end();
 		rfb._socketClose();
+		if (client) {
+                 client.disconnect();
+                 client.on('message', () => {});
+        }
     });
 };
 
