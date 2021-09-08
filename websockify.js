@@ -25,7 +25,7 @@ var argv = require('optimist').argv,
 	auth = require('http-auth'),
 	basic = auth.basic({
     realm: "main",
-    file: __dirname + "/../ioVNCpw.txt"
+    file: __dirname + "/ioVNCpw.txt"
     }),
 
     webServer, wsServer,
