@@ -15,6 +15,7 @@ export default class Display {
         this._drawCtx = null;
 
         this._renderQ = [];  // queue drawing actions for in-oder rendering
+		this._renderImgQ = [];  // queue drawing actions for JPEG rendering
         this._flushing = false;
 
         // the full frame buffer (logical canvas) size
@@ -358,9 +359,9 @@ export default class Display {
 		/* Base64.encode() needs a common JS array, not ArrayBuffer as received from io_socket.emit() */
 		const typedArray = new Uint8Array(arr);
         const array = Array.from(typedArray);
-        img.src = "data: " + mime + ";base64," + Base64.encode(array);
-
-        this._renderQPush({
+		img._noVNCDisplay = this;
+		
+        this._renderImgQ.push({
             'type': 'img',
             'img': img,
             'x': x,
@@ -368,6 +369,10 @@ export default class Display {
             'width': width,
             'height': height
         });
+		
+		img.addEventListener('load', this._resumeRenderQ);
+        img.src = "data: " + mime + ";base64," + Base64.encode(array);
+		
     }
 
     blitImage(x, y, width, height, arr, offset, fromQueue) {
@@ -461,11 +466,47 @@ export default class Display {
     }
 
     _resumeRenderQ() {
+								
         // "this" is the object that is ready, not the
         // display object
         this.removeEventListener('load', this._noVNCDisplay._resumeRenderQ);
-        this._noVNCDisplay._scanRenderQ();
+		//var index = this._noVNCDisplay._renderImgQ.findIndex(function callbackFn(element, index, array) { return element.img === this; }, this);
+		for (var index = 0; index < this._noVNCDisplay._renderImgQ.length; index++) {
+			if (this._noVNCDisplay._renderImgQ[index].img.complete) {
+				if (this._noVNCDisplay._renderImgQ[index].img.width !== this._noVNCDisplay._renderImgQ[index].width || this._noVNCDisplay._renderImgQ[index].img.height !== this._noVNCDisplay._renderImgQ[index].height) {
+                            //  Log.Error("Decoded image has incorrect dimensions. Got " +
+                            //          this._noVNCDisplay._renderImgQ[index].img.width + "x" + this._noVNCDisplay._renderImgQ[index].img.height + ". Expected " +
+                            //          this._noVNCDisplay._renderImgQ[index].width + "x" + this._noVNCDisplay._renderImgQ[index].height + ".");
+							this._noVNCDisplay._renderImgQ.splice(index, 1);
+							index--;
+                            continue;
+				}
+
+				this._noVNCDisplay.drawImage(this._noVNCDisplay._renderImgQ[index].img, this._noVNCDisplay._renderImgQ[index].x, this._noVNCDisplay._renderImgQ[index].y);
+				this._noVNCDisplay._renderImgQ.splice(index, 1);
+				index--;
+			}
+		
     }
+	}
+
+    _flushRenderImgQ() {
+								
+		for (var index = 0; index < this._renderImgQ.length; index++) {
+			if (this._renderImgQ[index].img.complete) {
+				if (this._renderImgQ[index].img.width !== this._renderImgQ[index].width || this._renderImgQ[index].img.height !== this._renderImgQ[index].height) {
+							this._renderImgQ.splice(index, 1);
+							index--;
+                            continue;
+				}
+
+				this.drawImage(this._renderImgQ[index].img, this._renderImgQ[index].x, this._renderImgQ[index].y);
+				this._renderImgQ.splice(index, 1);
+				index--;
+			}
+		
+    }
+	}
 
     _scanRenderQ() {
         let ready = true;

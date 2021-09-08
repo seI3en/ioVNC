@@ -251,7 +251,10 @@ export default class RFB extends EventTargetMixin {
 		this._sock.on("_updateConnectionState", (state) => {
 			this._updateConnectionState(state);
         });
-		
+		this._sock.on('disconnect', () => {
+            //console.log('user disconnected');
+			this._disconnect();
+        });
 
 		this._sock.on("fbu_pseudoEncodingLastRect", () => {
 			// can't call off server-side FBU processing anyway
@@ -319,6 +322,8 @@ export default class RFB extends EventTargetMixin {
                 this._display.flush();
                 return false;
             }*/
+		//console.log("got fbu_copy_image");
+		//this._display._flushRenderImgQ();
 		this._display.copyImage(deltaX, deltaY, x, y, width, height);
 		this._display.flip();
         });
@@ -330,6 +335,8 @@ export default class RFB extends EventTargetMixin {
                 this._display.flush();
                 return false;
             }*/
+		//console.log("got fbu_fill_rect");
+        //this._display._flushRenderImgQ();
 		this._display.fillRect(x, y, width, height, color, fromQueue);
 		this._display.flip();
         });
@@ -342,6 +349,21 @@ export default class RFB extends EventTargetMixin {
                 return false;
             }*/
 		this._display.imageRect(x, y, width, height, mimetype, data);
+		//this._display._flushRenderImgQ();
+		this._display.flip();
+        });
+
+		this._sock.on("fbu_tight_blit", (x, curY, width, currHeight, data, index, fromQueue) => {
+			// can't call off server-side FBU processing anyway
+			/*if (this._display.pending()) {
+                this._flushing = true;
+                this._display.flush();
+                return false;
+            }*/
+		//console.log("data length: " + data.byteLength + ", index: " + index + ", fromQueue: " + fromQueue);
+        //console.log("got fbu_tight_blit (paletteFilter basic_rect)");
+		//this._display._flushRenderImgQ();
+		this._display.blitImage(x, curY, width, currHeight, data, index, fromQueue);
 		this._display.flip();
         });
 		
